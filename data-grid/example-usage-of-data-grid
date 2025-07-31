@@ -1,0 +1,681 @@
+'use client';
+
+import * as React from 'react';
+import Box from '@mui/material/Box';
+import Tooltip from '@mui/material/Tooltip';
+import AddIcon from '@mui/icons-material/Add';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/DeleteOutlined';
+import SaveIcon from '@mui/icons-material/Save';
+import SearchIcon from '@mui/icons-material/Search';
+import CancelIcon from '@mui/icons-material/Close';
+import {
+  DataGrid,
+  GridColDef,
+  GridRowModesModel,
+  GridRowModes,
+  GridActionsCellItem,
+  GridEventListener,
+  GridRowId,
+  GridRowEditStopReasons,
+  ToolbarButton,
+  //   GridToolbarProps,
+  //   ToolbarPropsOverrides,
+  GridRowSelectionModel,
+  GridRenderEditCellParams,
+  useGridApiContext,
+  Toolbar,
+  GridRenderCellParams,
+  //   GridToolbarQuickFilter,
+  QuickFilter,
+  QuickFilterTrigger,
+  QuickFilterControl,
+  QuickFilterClear,
+  ColumnsPanelTrigger,
+  FilterPanelTrigger,
+} from '@mui/x-data-grid';
+import Typography from '@mui/material/Typography';
+import Chip from '@mui/material/Chip';
+import TextField from '@mui/material/TextField';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import Checkbox from '@mui/material/Checkbox';
+import ListItemText from '@mui/material/ListItemText';
+import OutlinedInput from '@mui/material/OutlinedInput';
+import ViewColumnIcon from '@mui/icons-material/ViewColumn';
+import FilterListIcon from '@mui/icons-material/FilterList';
+import { format } from 'date-fns';
+import { Badge, IconButton, InputAdornment, styled } from '@mui/material';
+
+// Defines the configuration for each dynamic column in the grid.
+// - `field_id`: key used by DataGrid to identify the column
+// - `field_name`: text displayed as column header
+// - `input_type`: determines which editor to render (textbox, date picker, etc.)
+// - `field_values`: list of preset options for dropdowns and checkboxes
+interface IFieldConfig {
+  field_id: string;
+  field_name: string;
+  input_type: 'textbox' | 'number' | 'dropdown' | 'date' | 'checkbox';
+  has_options?: boolean;
+  field_values?: string[];
+}
+
+// Represents the data model for each row
+// - Index by dynamic fields from IFieldConfig
+// - `isNew`: flag used to roll back or highlight newly added rows
+interface RowData {
+  id: number;
+  [key: string]: any;
+  isNew: boolean;
+}
+
+// Static field configuration: this drives both header display and edit behavior
+const fieldConfigs: IFieldConfig[] = [
+  { field_id: 'firstName', field_name: 'First Name', input_type: 'textbox' },
+  { field_id: 'age', field_name: 'Age', input_type: 'number' },
+  {
+    field_id: 'hobbies',
+    field_name: 'Hobbies',
+    input_type: 'checkbox',
+    has_options: true,
+    field_values: [
+      'Reading',
+      'Hiking',
+      'Gaming',
+      'Cooking',
+      'Traveling',
+      'Photography',
+      'Swimming',
+      'Music',
+    ],
+  },
+  {
+    field_id: 'country',
+    field_name: 'Country',
+    input_type: 'dropdown',
+    has_options: true,
+    field_values: ['USA', 'Canada', 'UK', 'Australia', 'Germany', 'Japan'],
+  },
+  { field_id: 'dob', field_name: 'Date of Birth', input_type: 'date' },
+];
+
+// Seed data for initial grid display
+const initialRows: RowData[] = [
+  {
+    id: 1,
+    firstName: 'Alice',
+    age: 30,
+    hobbies: ['Reading', 'Hiking'],
+    country: 'USA',
+    dob: '1995-01-01',
+    isNew: false,
+  },
+  {
+    id: 2,
+    firstName: 'Bob',
+    age: 25,
+    hobbies: ['Gaming'],
+    country: 'Canada',
+    dob: '1998-05-15',
+    isNew: false,
+  },
+  {
+    id: 3,
+    firstName: 'Charlie',
+    age: 35,
+    hobbies: ['Cooking', 'Traveling', 'Photography'],
+    country: 'UK',
+    dob: '1988-11-20',
+    isNew: false,
+  },
+];
+
+// Extend GridSlots to include toolbar props
+declare module '@mui/x-data-grid' {
+  interface ToolbarPropsOverrides {
+    setRows: React.Dispatch<React.SetStateAction<RowData[]>>;
+    setRowModesModel: React.Dispatch<React.SetStateAction<GridRowModesModel>>;
+    fieldConfigs: IFieldConfig[];
+  }
+}
+
+/**
+ * Renders a custom editor inside a cell, based on the fieldConfig.
+ * @param params - DataGrid-provided props containing rowId, field name, current value
+ * @param fieldConfig - configuration dictating which input type to use
+ */
+function EditCellComponent({
+  params,
+  fieldConfig,
+}: {
+  params: GridRenderEditCellParams;
+  fieldConfig: IFieldConfig;
+}) {
+  const apiRef = useGridApiContext(); // Provides methods to interact with the grid
+  const { value } = params;
+
+  // For multi-select
+  if (fieldConfig.input_type === 'checkbox') {
+    return (
+      <Select
+        multiple
+        value={value || []}
+        onChange={(e) => {
+          apiRef.current.setEditCellValue({
+            id: params.id,
+            field: params.field,
+            value: e.target.value,
+          });
+        }}
+        input={<OutlinedInput label={fieldConfig.field_name} />}
+        renderValue={(selected) => (selected as string[]).join(', ')}
+        sx={{ width: '100%' }}
+      >
+        {fieldConfig.field_values?.map((option) => (
+          <MenuItem key={option} value={option}>
+            <Checkbox checked={value?.includes(option)} />
+            <ListItemText primary={option} />
+          </MenuItem>
+        ))}
+      </Select>
+    );
+  }
+
+  // For dropdown
+  if (fieldConfig.input_type === 'dropdown') {
+    return (
+      <Select
+        value={value || ''}
+        onChange={(e) => {
+          apiRef.current.setEditCellValue({
+            id: params.id,
+            field: params.field,
+            value: e.target.value,
+          });
+        }}
+        sx={{ width: '100%' }}
+      >
+        {fieldConfig.field_values?.map((option) => (
+          <MenuItem key={option} value={option}>
+            {option}
+          </MenuItem>
+        ))}
+      </Select>
+    );
+  }
+
+  // For number
+  if (fieldConfig.input_type === 'number') {
+    return (
+      <TextField
+        type="number"
+        value={value ?? ''}
+        onChange={(e) => {
+          apiRef.current.setEditCellValue({
+            id: params.id,
+            field: params.field,
+            value: e.target.value === '' ? null : Number(e.target.value),
+          });
+        }}
+        fullWidth
+      />
+    );
+  }
+
+  // For date
+  if (fieldConfig.input_type === 'date') {
+    return (
+      <TextField
+        type="date"
+        value={value ?? ''}
+        onChange={(e) => {
+          apiRef.current.setEditCellValue({
+            id: params.id,
+            field: params.field,
+            value: e.target.value,
+          });
+        }}
+        fullWidth
+      />
+    );
+  }
+
+  // For textbox
+  return (
+    <TextField
+      value={value ?? ''}
+      onChange={(e) => {
+        apiRef.current.setEditCellValue({
+          id: params.id,
+          field: params.field,
+          value: e.target.value,
+        });
+      }}
+      fullWidth
+    />
+  );
+}
+
+/**
+ * Main DataGrid component showcasing dynamic columns, inline editing, and custom toolbar.
+ */
+export default function DynamicDataGrid() {
+  // State hooks to drive DataGrid behavior:
+  const [rows, setRows] = React.useState<RowData[]>(initialRows); // actual row data
+  const [rowModesModel, setRowModesModel] = React.useState<GridRowModesModel>(
+    {}
+  ); // tracks view vs edit mode per row
+  const [rowSelectionModel, setRowSelectionModel] =
+    React.useState<GridRowSelectionModel>({
+      ids: new Set(),
+      type: 'include',
+    });
+  const [dirtyRows, setDirtyRows] = React.useState<Set<GridRowId>>(new Set()); // track rows with unsaved edits
+
+  // Prevent auto-closing edit mode when clicking outside cell
+  const handleRowEditStop: GridEventListener<'rowEditStop'> = (
+    params,
+    event
+  ) => {
+    if (params.reason === GridRowEditStopReasons.rowFocusOut) {
+      event.defaultMuiPrevented = true;
+    }
+  };
+
+  // Switch a single row into edit mode and mark it dirty
+  const handleEditClick = (id: GridRowId) => () => {
+    setRowModesModel({ ...rowModesModel, [id]: { mode: GridRowModes.Edit } });
+    setDirtyRows((prev) => new Set(prev).add(id));
+  };
+
+  // Save / commit edits for one row, switch back to view mode
+  const handleSaveClick = (id: GridRowId) => () => {
+    setRowModesModel({ ...rowModesModel, [id]: { mode: GridRowModes.View } });
+    setDirtyRows((prev) => {
+      const s = new Set(prev);
+      s.delete(id);
+      return s;
+    });
+  };
+
+  // Remove a row from data
+  const handleDeleteClick = (id: GridRowId) => () => {
+    setRows(rows.filter((row) => row.id !== id));
+  };
+
+  // Cancel edits: revert changes, drop new rows if isNew = true
+  const handleCancelClick = (id: GridRowId) => () => {
+    setRowModesModel({
+      ...rowModesModel,
+      [id]: { mode: GridRowModes.View, ignoreModifications: true },
+    });
+    const editedRow = rows.find((row) => row.id === id);
+    if (editedRow?.isNew) {
+      setRows(rows.filter((row) => row.id !== id));
+    }
+    setDirtyRows((prev) => {
+      const s = new Set(prev);
+      s.delete(id);
+      return s;
+    });
+  };
+
+  // Commit a row update: replace in state and clear isNew flag
+  const processRowUpdate = (newRow: RowData) => {
+    const updatedRow: RowData = { ...newRow, isNew: false };
+    setRows((prevRows) =>
+      prevRows.map((row) => (row.id === newRow.id ? updatedRow : row))
+    );
+    return updatedRow;
+  };
+
+  // Keep track of external rowModes changes
+  const handleRowModesModelChange = (newRowModesModel: GridRowModesModel) => {
+    setRowModesModel(newRowModesModel);
+  };
+
+  /**
+   * Render read-only cells according to type:
+   * - checkbox fields as MUI Chips
+   * - date fields formatted
+   * - default: just value text
+   */
+  function renderCell(params: any, fieldConfig: IFieldConfig) {
+    const { value } = params;
+    switch (fieldConfig.input_type) {
+      case 'checkbox':
+        return (
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+            {Array.isArray(value) &&
+              value.map((item: string, index: number) => (
+                <Chip key={index} label={item} size="small" />
+              ))}
+          </Box>
+        );
+      case 'date':
+        return value ? format(value, 'dd/MMM/yyyy') : '';
+      default:
+        return value;
+    }
+  }
+
+  // Create a blank row, pre-populated with default values, and enter edit mode
+  function handleAddRecord() {
+    const id = Math.random();
+    const emptyRow: RowData = { id, isNew: true };
+
+    fieldConfigs.forEach((field) => {
+      switch (field.input_type) {
+        case 'textbox':
+          emptyRow[field.field_id] = '';
+          break;
+        case 'number':
+          emptyRow[field.field_id] = null;
+          break;
+        case 'dropdown':
+          emptyRow[field.field_id] = field.field_values?.[0] || '';
+          break;
+        case 'date':
+          // eslint-disable-next-line prefer-destructuring
+          emptyRow[field.field_id] = new Date().toISOString().split('T')[0];
+          break;
+        case 'checkbox':
+          emptyRow[field.field_id] = [];
+          break;
+        default:
+          emptyRow[field.field_id] = '';
+      }
+    });
+
+    setRows((oldRows) => [...oldRows, emptyRow]);
+    setRowModesModel((oldModel) => ({
+      ...oldModel,
+      [id]: {
+        mode: GridRowModes.Edit,
+        fieldToFocus: fieldConfigs[0]?.field_id,
+      },
+    }));
+    setDirtyRows((prev) => {
+      const s = new Set(prev);
+      s.add(id);
+      return s;
+    });
+  }
+
+  // Save all rows currently marked dirty, clear selection and dirty set
+  const handleSaveAll = () => {
+    const rowsToSave = [...dirtyRows];
+    const newRowModesModel = { ...rowModesModel };
+
+    rowsToSave.forEach((id) => {
+      newRowModesModel[id] = { mode: GridRowModes.View };
+    });
+
+    setRowModesModel(newRowModesModel);
+    setDirtyRows(new Set());
+    setRowSelectionModel({
+      ids: new Set(),
+      type: 'include',
+    });
+  };
+
+  // Custom styled toolbar components for search/filter controls
+  type OwnerState = {
+    expanded: boolean;
+  };
+  const StyledQuickFilter = styled(QuickFilter)({
+    display: 'grid',
+    alignItems: 'center',
+  });
+  const StyledToolbarButton = styled(ToolbarButton)<{ ownerState: OwnerState }>(
+    ({ theme, ownerState }) => ({
+      gridArea: '1 / 1',
+      width: 'min-content',
+      height: 'min-content',
+      zIndex: 1,
+      opacity: ownerState.expanded ? 0 : 1,
+      pointerEvents: ownerState.expanded ? 'none' : 'auto',
+      transition: theme.transitions.create(['opacity']),
+    })
+  );
+  const StyledTextField = styled(TextField)<{
+    ownerState: OwnerState;
+  }>(({ theme, ownerState }) => ({
+    gridArea: '1 / 1',
+    overflowX: 'clip',
+    width: ownerState.expanded ? 260 : 'var(--trigger-width)',
+    opacity: ownerState.expanded ? 1 : 0,
+    transition: theme.transitions.create(['width', 'opacity']),
+  }));
+
+  /**
+   * Custom toolbar demonstrates using handlers and state props:
+   * - `handleAddRecord` for new rows
+   * - `handleSaveAll` toggles enabled based on `dirtyRows`
+   * - built-in column & filter panels with badges
+   * - QuickFilter with animated expand/collapse
+   */
+  function CustomToolbar() {
+    return (
+      <Toolbar>
+        <Tooltip title="Add record">
+          <IconButton onClick={handleAddRecord}>
+            <AddIcon />
+          </IconButton>
+        </Tooltip>
+
+        <Tooltip
+          title={
+            rowSelectionModel.ids.size === 0
+              ? 'Select rows to save'
+              : 'Save all changes'
+          }
+        >
+          <span>
+            <IconButton
+              onClick={handleSaveAll}
+              disabled={
+                dirtyRows.size === 0 && rowSelectionModel.ids.size === 0
+              }
+            >
+              <SaveIcon />
+            </IconButton>
+          </span>
+        </Tooltip>
+
+        <Tooltip title="Columns">
+          <ColumnsPanelTrigger render={<ToolbarButton />}>
+            <ViewColumnIcon fontSize="small" />
+          </ColumnsPanelTrigger>
+        </Tooltip>
+
+        <Tooltip title="Filters">
+          <FilterPanelTrigger
+            render={(props, state) => (
+              <ToolbarButton {...props} color="default">
+                <Badge
+                  badgeContent={state.filterCount}
+                  color="primary"
+                  variant="dot"
+                >
+                  <FilterListIcon fontSize="small" />
+                </Badge>
+              </ToolbarButton>
+            )}
+          />
+        </Tooltip>
+
+        <StyledQuickFilter>
+          <QuickFilterTrigger
+            render={(triggerProps, state) => (
+              <Tooltip title="Search" enterDelay={0}>
+                <StyledToolbarButton
+                  {...triggerProps}
+                  ownerState={{ expanded: state.expanded }}
+                  color="default"
+                  aria-disabled={state.expanded}
+                >
+                  <SearchIcon fontSize="small" />
+                </StyledToolbarButton>
+              </Tooltip>
+            )}
+          />
+          <QuickFilterControl
+            render={({ ref, ...controlProps }, state) => (
+              <StyledTextField
+                {...controlProps}
+                ownerState={{ expanded: state.expanded }}
+                inputRef={ref}
+                aria-label="Search"
+                placeholder="Search..."
+                size="small"
+                slotProps={{
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon fontSize="small" />
+                      </InputAdornment>
+                    ),
+                    endAdornment: state.value ? (
+                      <InputAdornment position="end">
+                        <QuickFilterClear
+                          edge="end"
+                          size="small"
+                          aria-label="Clear search"
+                          material={{ sx: { marginRight: -0.75 } }}
+                        >
+                          <CancelIcon fontSize="small" />
+                        </QuickFilterClear>
+                      </InputAdornment>
+                    ) : null,
+                    ...controlProps.slotProps?.input,
+                  },
+                  ...controlProps.slotProps,
+                }}
+              />
+            )}
+          />
+        </StyledQuickFilter>
+      </Toolbar>
+    );
+  }
+
+  // Build columns dynamically, appending an 'Actions' column for edit/delete buttons
+  const columns: GridColDef[] = [
+    ...fieldConfigs.map((fieldConfig) => ({
+      field: fieldConfig.field_id,
+      headerName: fieldConfig.field_name,
+      width: 200,
+      editable: true,
+      sortable: true,
+      filterable: true,
+      renderCell: (params: GridRenderCellParams) =>
+        renderCell(params, fieldConfig),
+      renderEditCell: (params: GridRenderCellParams) => (
+        <EditCellComponent params={params} fieldConfig={fieldConfig} />
+      ),
+    })),
+    {
+      field: 'actions',
+      type: 'actions',
+      headerName: 'Actions',
+      width: 100,
+      cellClassName: 'actions',
+      getActions: ({ id }) => {
+        const isInEditMode = rowModesModel[id]?.mode === GridRowModes.Edit;
+        if (isInEditMode) {
+          return [
+            <GridActionsCellItem
+              key={`${id}-save`}
+              icon={<SaveIcon />}
+              label="Save"
+              onClick={handleSaveClick(id)}
+            />,
+            <GridActionsCellItem
+              key={`${id}-cancel`}
+              icon={<CancelIcon />}
+              label="Cancel"
+              className="textPrimary"
+              onClick={handleCancelClick(id)}
+              color="inherit"
+            />,
+          ];
+        }
+        return [
+          <GridActionsCellItem
+            key={`${id}-edit`}
+            icon={<EditIcon />}
+            label="Edit"
+            className="textPrimary"
+            onClick={handleEditClick(id)}
+            color="inherit"
+          />,
+          <GridActionsCellItem
+            key={`${id}-delete`}
+            icon={<DeleteIcon />}
+            label="Delete"
+            onClick={handleDeleteClick(id)}
+            color="inherit"
+          />,
+        ];
+      },
+    },
+  ];
+
+  return (
+    <Box
+      sx={{
+        height: 500,
+        width: '100%',
+        '& .actions': { color: 'text.secondary' },
+        '& .textPrimary': { color: 'text.primary' },
+      }}
+    >
+      <DataGrid
+        rows={rows} // `rows`: the array of row data to display
+        columns={columns} // `columns`: dynamically generated column definitions, including custom renderers
+        getRowId={(row) => row.id} // `getRowId`: callback to extract unique id from each row object
+        editMode="row" // `editMode="row"`: enables full-row editing instead of cell-by-cell
+        rowModesModel={rowModesModel} // `rowModesModel`: external state tracking view/edit mode per row
+        onRowModesModelChange={handleRowModesModelChange} // `onRowModesModelChange`: called when edit/view modes change (e.g., user clicks Edit)
+        onRowEditStart={(params) => {
+          setDirtyRows((prev) => new Set(prev).add(params.id));
+        }} // `onRowEditStart`: triggered at start of edit; mark row as dirty
+        onRowEditStop={handleRowEditStop} // `onRowEditStop`: prevents row from exiting edit mode on outside click
+        processRowUpdate={processRowUpdate} // `processRowUpdate`: callback to commit row changes to state
+        slots={{ toolbar: CustomToolbar }} // `slots.toolbar`: inject our custom toolbar component
+        // `toolbar`: these props will be available inside your `CustomToolbar` component.
+        // - `setRows`       : row state setter so toolbar buttons can modify the grid data
+        // - `setRowModesModel`: edit/view mode setter to switch rows into edit mode
+        // - `fieldConfigs`  : the column configuration array, so toolbar logic can reference field definitions
+        slotProps={{
+          toolbar: { setRows, setRowModesModel, fieldConfigs },
+        }}
+        initialState={{
+          pagination: {
+            paginationModel: { pageSize: 5 },
+          },
+          sorting: { sortModel: [{ field: 'id', sort: 'asc' }] },
+        }} // `initialState`: configure initial pagination and sorting
+        pageSizeOptions={[5]} // `pageSizeOptions`: allowed page size selections
+        checkboxSelection // `checkboxSelection`: enables row selection via checkboxes
+        disableRowSelectionOnClick // `disableRowSelectionOnClick`: clicking a row won't select it (only checkbox)
+        rowSelectionModel={rowSelectionModel} // `rowSelectionModel`: controlled selection state (ids set)
+        onRowSelectionModelChange={(newRowSelectionModel) => {
+          setRowSelectionModel(newRowSelectionModel);
+        }} // `onRowSelectionModelChange`: update selection state
+        showToolbar // `showToolbar`: always show toolbar slot
+      />
+      <Typography variant="h6" sx={{ mt: 2 }}>
+        {/* Display currently selected row IDs and unsaved changes count */}
+        {Array.isArray(rowSelectionModel) && (
+          <p>
+            Selected IDs: {rowSelectionModel.join(', ')}
+            {rowSelectionModel.length ? rowSelectionModel.join(', ') : 'None'}
+          </p>
+        )}
+        <p>{dirtyRows.size > 0 && ` | Unsaved changes: ${dirtyRows.size}`}</p>
+      </Typography>
+    </Box>
+  );
+}
