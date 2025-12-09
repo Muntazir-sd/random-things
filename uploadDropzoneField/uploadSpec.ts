@@ -4,7 +4,7 @@
  * UPLOAD SPEC (Single Source of Truth)
  *
  * Overview
- * - Define base file *kinds* (CSV, XLSX, PDF, IMAGE) with their extensions,
+ * - Define base file *kinds* (CSV, XLSX, PDF, IMAGE, DOC) with their extensions,
  *   MIME types, and human labels.
  * - Declare *modes* as combinations of those kinds (e.g., "csv_xlsx_pdf_image").
  * - All derived artifacts (labels, <input accept> strings, validators) are
@@ -37,7 +37,7 @@
  */
 
 /** Atomic file kinds supported across the app. Add new kinds here (e.g., 'zip'). */
-export type FileKind = 'csv' | 'xlsx' | 'pdf' | 'image';
+export type FileKind = 'csv' | 'xlsx' | 'pdf' | 'image' | 'doc';
 
 /** Display + matching info for a file kind. */
 type FileSpec = {
@@ -89,6 +89,14 @@ export const FILE_KIND_SPECS: Record<FileKind, FileSpec> = {
     extensions: ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'],
     mimes: ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/bmp', 'image/webp'],
   },
+  doc: {
+    label: 'DOC/DOCX',
+    extensions: ['.doc', '.docx'],
+    mimes: [
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ],
+  },
 } as const;
 
 /**
@@ -100,9 +108,11 @@ export const UPLOAD_MODE_CONFIG = {
   xlsx: ['xlsx'],
   pdf: ['pdf'],
   image: ['image'],
+  doc: ['doc'],
   csv_xlsx: ['csv', 'xlsx'],
   csv_xlsx_pdf: ['csv', 'xlsx', 'pdf'],
   pdf_image: ['pdf', 'image'],
+  pdf_doc: ['pdf', 'doc'],
   csv_xlsx_image: ['csv', 'xlsx', 'image'],
   csv_xlsx_pdf_image: ['csv', 'xlsx', 'pdf', 'image'],
 } as const;
