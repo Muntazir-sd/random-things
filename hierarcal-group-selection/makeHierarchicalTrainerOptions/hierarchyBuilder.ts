@@ -1,0 +1,155 @@
+import {
+  IDashboardTrainer,
+  ITreeNode,
+  IFlatOption,
+  HierarchyResult,
+} from './types';
+
+/**
+ * Converts a database record into a UI Tree Node.
+ */
+function toTreeNode(trainer: IDashboardTrainer): ITreeNode {
+  return {
+    id: trainer.trainer_id,
+    name: trainer.trainer_name,
+    level: trainer.level,
+    parentId: trainer.reporting_to,
+  };
+}
+
+/**
+ * Enriches a flat option with the name and level of its immediate parent.
+ *
+ * Performance Note:
+ * This is performed once during the build phase (O(N)).
+ * It allows the FlatListView to render rows in O(1) without needing
+ * to traverse the tree or perform lookups during scroll events.
+ */
+function enrichFlatOption(
+  option: IFlatOption,
+  trainerMap: Map<number, IDashboardTrainer>
+): IFlatOption {
+  if (option.parentId) {
+    const parent = trainerMap.get(option.parentId);
+    if (parent) {
+      option.parentName = parent.trainer_name;
+      option.parentLevel = parent.level;
+    }
+  }
+  return option;
+}
+
+/**
+ * Builds the hierarchical structure from a flat list of trainers.
+ *
+ * Algorithm:
+ * 1. Indexing: Create a map of all trainers for O(1) access.
+ * 2. Grouping: Create an adjacency list (parent -> children).
+ * 3. Tree Construction: Recursively build the tree starting from roots.
+ * 4. Flattening: Simultaneously build a flat list optimized for search.
+ * 5. Orphan Handling: Identify and attach disconnected nodes to the root level.
+ */
+export default function createTrainerHierarchy(
+  trainers: IDashboardTrainer[]
+): HierarchyResult {
+  // 1. Lookup maps
+  const trainerMap = new Map(trainers.map((t) => [t.trainer_id, t]));
+  const childrenMap = new Map<number, IDashboardTrainer[]>();
+
+  // 2. Group by parentId (0 = root or null)
+  trainers.forEach((trainer) => {
+    const parentId = trainer.reporting_to ?? 0;
+    if (!childrenMap.has(parentId)) {
+      childrenMap.set(parentId, []);
+    }
+    childrenMap.get(parentId)!.push(trainer);
+  });
+
+  const tree: ITreeNode[] = [];
+  const flatList: IFlatOption[] = [];
+
+  // 3. Recursive builder
+  const buildTree = (
+    parentId: number | null,
+    depth: number = 0
+  ): ITreeNode[] => {
+    const children = childrenMap.get(parentId ?? 0) || [];
+
+    return children
+      .sort((a, b) => {
+        // Sort by level first, then name
+        if (a.level !== b.level) return a.level - b.level;
+        return a.trainer_name.localeCompare(b.trainer_name);
+      })
+      .map((child) => {
+        const node = toTreeNode(child);
+        const childNodes = buildTree(child.trainer_id, depth + 1);
+
+        if (childNodes.length > 0) {
+          node.children = childNodes;
+        }
+
+        // Create base flat option
+        const flatOption: IFlatOption = {
+          value: child.trainer_id,
+          label: child.trainer_name,
+          level: child.level,
+          parentId: child.reporting_to,
+        };
+
+        // Enrich with parent info immediately
+        flatList.push(enrichFlatOption(flatOption, trainerMap));
+
+        return node;
+      });
+  };
+
+  // 4. Start with root nodes (those with parentId 0 or null)
+  const rootCandidates = childrenMap.get(0) || [];
+  const roots = rootCandidates.sort((a, b) =>
+    a.trainer_name.localeCompare(b.trainer_name)
+  );
+
+  roots.forEach((root) => {
+    const rootNode = toTreeNode(root);
+    const childNodes = buildTree(root.trainer_id, 1);
+
+    if (childNodes.length > 0) {
+      rootNode.children = childNodes;
+    }
+
+    tree.push(rootNode);
+
+    // Add root to flat list (no parent enrichment needed)
+    flatList.push({
+      value: root.trainer_id,
+      label: root.trainer_name,
+      level: root.level,
+      parentId: root.reporting_to,
+    });
+  });
+
+  // 5. Orphan handling – any trainer not yet added becomes a root.
+  // This ensures data integrity even if the database has broken relationships.
+  const addedIds = new Set(flatList.map((item) => item.value));
+  const orphans = trainers.filter((t) => !addedIds.has(t.trainer_id));
+
+  orphans.forEach((orphan) => {
+    const node = toTreeNode(orphan);
+    tree.push(node);
+
+    flatList.push(
+      enrichFlatOption(
+        {
+          value: orphan.trainer_id,
+          label: orphan.trainer_name,
+          level: orphan.level,
+          parentId: orphan.reporting_to,
+        },
+        trainerMap
+      )
+    );
+  });
+
+  return { tree, flatList };
+}
