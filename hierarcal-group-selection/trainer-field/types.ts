@@ -18,6 +18,8 @@ export interface TrainerFieldProps {
   selectedIds?: number[];
   /** Callback for value changes (Multi Select Mode). */
   onMultiChange?: (ids: number[]) => void;
+  /** Specific user that we don't want to display even if he is available */
+  excludeUserId?: number;
 }
 
 export interface SelectionSummaryProps {

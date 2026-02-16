@@ -39,6 +39,7 @@ export default function TrainerField({
   mode = 'single',
   selectedIds = [],
   onMultiChange,
+  excludeUserId,
 }: TrainerFieldProps) {
   /**
    * Data Layer:
@@ -47,7 +48,8 @@ export default function TrainerField({
    */
   const { treeNodes, flatOptions, adminNodeIds, isLoading } = useTrainerData(
     trainers,
-    loading
+    loading,
+    excludeUserId
   );
 
   /**

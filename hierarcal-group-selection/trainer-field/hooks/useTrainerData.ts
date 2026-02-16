@@ -24,10 +24,12 @@ interface UseTrainerDataReturn {
  *
  * @param trainers - Raw array of trainer objects.
  * @param loading - External loading state.
+ * @param excludeUserId - Specific trainer that we dont want to display but is used in creating a hirarchy.
  */
 export default function useTrainerData(
   trainers: IDashboardTrainer[],
-  loading: boolean
+  loading: boolean,
+  excludeUserId?: number
 ): UseTrainerDataReturn {
   // Memoize the hierarchy build process as it is computationally expensive (O(n log n)).
   // We use the helper utility 'createTrainerHierarchy' to keep the hook logic clean.
@@ -37,7 +39,10 @@ export default function useTrainerData(
     }
 
     try {
-      const { tree, flatList } = createTrainerHierarchy(trainers);
+      const { tree, flatList } = createTrainerHierarchy(
+        trainers,
+        excludeUserId
+      );
       return { treeNodes: tree, flatOptions: flatList };
     } catch (error) {
       console.error('Error building trainer hierarchy:', error);

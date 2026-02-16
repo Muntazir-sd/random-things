@@ -47,10 +47,12 @@ function enrichFlatOption(
  * 2. Grouping: Create an adjacency list (parent -> children).
  * 3. Tree Construction: Recursively build the tree starting from roots.
  * 4. Flattening: Simultaneously build a flat list optimized for search.
- * 5. Orphan Handling: Identify and attach disconnected nodes to the root level.
+ * 5. Exclusion Handling: Remove the excluded trainer from the final list.
+ * 6. Orphan Handling: Identify and attach disconnected nodes to the root level.
  */
 export default function createTrainerHierarchy(
-  trainers: IDashboardTrainer[]
+  trainers: IDashboardTrainer[],
+  excludeUserId?: number
 ): HierarchyResult {
   // 1. Lookup maps
   const trainerMap = new Map(trainers.map((t) => [t.trainer_id, t]));
@@ -105,7 +107,30 @@ export default function createTrainerHierarchy(
   };
 
   // 4. Start with root nodes (those with parentId 0 or null)
-  const rootCandidates = childrenMap.get(0) || [];
+  let rootCandidates = childrenMap.get(0) || [];
+ 
+  // 5. Exclusion Handling:
+  // If an `excludeUserId` is provided:
+  // - Remove the excluded trainer from the root candidates.
+  // - Promote the excluded trainer's direct children to root level.
+  // - Ensure no duplicates are introduced when merging.
+  //
+  // This preserves the visible hierarchy while preventing the excluded
+  // trainer from appearing in the final tree structure.
+  if (excludeUserId !== undefined) {
+    // Remove the excluded user from roots
+    rootCandidates = rootCandidates.filter(
+      (t) => t.trainer_id !== excludeUserId
+    );
+    // Add the excluded user's direct children as additional roots
+    const excludedUserChildren = childrenMap.get(excludeUserId) || [];
+    const existingIds = new Set(rootCandidates.map((t) => t.trainer_id));
+    const newChildren = excludedUserChildren.filter(
+      (child) => !existingIds.has(child.trainer_id)
+    );
+    rootCandidates = [...rootCandidates, ...newChildren];
+  }
+ 
   const roots = rootCandidates.sort((a, b) =>
     a.trainer_name.localeCompare(b.trainer_name)
   );
@@ -129,10 +154,15 @@ export default function createTrainerHierarchy(
     });
   });
 
-  // 5. Orphan handling – any trainer not yet added becomes a root.
+  // 6. Orphan handling – any trainer not yet added becomes a root.
   // This ensures data integrity even if the database has broken relationships.
   const addedIds = new Set(flatList.map((item) => item.value));
-  const orphans = trainers.filter((t) => !addedIds.has(t.trainer_id));
+  let orphans = trainers.filter((t) => !addedIds.has(t.trainer_id));
+
+ // Prevent the excluded trainer from being reintroduced during orphan handling.
+  if (excludeUserId !== undefined) {
+    orphans = orphans.filter((t) => t.trainer_id !== excludeUserId);
+  }
 
   orphans.forEach((orphan) => {
     const node = toTreeNode(orphan);
