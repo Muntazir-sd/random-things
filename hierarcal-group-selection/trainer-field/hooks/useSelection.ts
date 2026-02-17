@@ -20,7 +20,11 @@ export default function useSelection(
   // Stores values as strings to match MUI TreeView requirements.
   const [selectedItems, setSelectedItems] = useState<string | string[]>(
     // eslint-disable-next-line no-nested-ternary
-    mode === 'multi' ? selectedIds.map(String) : value ? String(value) : ''
+    mode === 'multi'
+      ? selectedIds.map(String)
+      : value !== null && value !== undefined
+        ? String(value)
+        : ''
   );
 
   // Sync internal state when parent props change (Controlled Component pattern).
@@ -28,23 +32,23 @@ export default function useSelection(
     if (mode === 'multi') {
       setSelectedItems(selectedIds.map(String));
     } else {
-      setSelectedItems(value ? String(value) : '');
+      setSelectedItems(
+        value !== null && value !== undefined ? String(value) : ''
+      );
     }
   }, [value, selectedIds, mode]);
 
   // Unified handler for TreeView selection changes.
   const handleSelectionChange = useCallback<TreeViewProps['onSelectionChange']>(
     (_event, itemIds) => {
-      if (!itemIds) return;
-
-      setSelectedItems(itemIds);
+      setSelectedItems(itemIds !== null ? itemIds : '');
 
       // Branch logic based on mode to call the correct parent callback.
       if (mode === 'multi' && onMultiChange) {
         const ids = (itemIds as string[]).map(Number);
         onMultiChange(ids);
       } else if (mode === 'single') {
-        const id = itemIds ? Number(itemIds) : null;
+        const id = itemIds === '' || itemIds === null ? null : Number(itemIds);
         onChange(id);
       }
     },
